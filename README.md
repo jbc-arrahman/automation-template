@@ -2,26 +2,98 @@
 
 Welcome! This repository is a ready-to-use starter kit for **AI browser automation** across **macOS, Linux, and Windows**. It uses **[browser-use](https://github.com/browser-use/browser-use)** and an **AI API key** (we recommend **Google Gemini** because it is fast, supports screenshots, and costs the least).
 
-Everything you need to know — setting up, choosing a browser mode, running with or without Docker, and adding your own custom automation processes — is in this single document.
+Everything you need to know — what makes automation reliable in production, choosing a browser mode, running with or without Docker, and adding your own custom automation processes — is in this single document.
 
 ---
 
 ## Table of Contents
 
-1. [The Big Picture: 2 Browser Modes & 2 Ways to Run](#1-the-big-picture-2-browser-modes--2-ways-to-run)
-2. [First-Time Setup (`.env`)](#2-first-time-setup-env)
-3. [How to Run Tasks (Native vs. Docker Side-by-Side)](#3-how-to-run-tasks-native-vs-docker-side-by-side)
-4. [Understanding the 2 Browser Modes in Detail](#4-understanding-the-2-browser-modes-in-detail)
-5. [Understanding the Docker Setup in Detail](#5-understanding-the-docker-setup-in-detail)
-6. [How to Modify the Project for Your Own Process](#6-how-to-modify-the-project-for-your-own-process)
-7. [Prompting Best Practices (Production Lessons)](#7-prompting-best-practices-production-lessons)
-8. [What Makes Browser Automation Robust (Production Guide)](#8-what-makes-browser-automation-robust-production-guide)
+1. [What Makes Browser Automation Robust (Production Guide)](#1-what-makes-browser-automation-robust-production-guide)
+2. [The Big Picture: 2 Browser Modes & 2 Ways to Run](#2-the-big-picture-2-browser-modes--2-ways-to-run)
+3. [First-Time Setup (`.env`)](#3-first-time-setup-env)
+4. [How to Run Tasks (Native vs. Docker Side-by-Side)](#4-how-to-run-tasks-native-vs-docker-side-by-side)
+5. [Understanding the 2 Browser Modes in Detail](#5-understanding-the-2-browser-modes-in-detail)
+6. [Understanding the Docker Setup in Detail](#6-understanding-the-docker-setup-in-detail)
+7. [How to Modify the Project for Your Own Process](#7-how-to-modify-the-project-for-your-own-process)
+8. [Prompting Best Practices (Production Lessons)](#8-prompting-best-practices-production-lessons)
 9. [Project Structure & Architecture](#9-project-structure--architecture)
 10. [Troubleshooting Common Issues](#10-troubleshooting-common-issues)
 
 ---
 
-## 1. The Big Picture: 2 Browser Modes & 2 Ways to Run
+## 1. What Makes Browser Automation Robust (Production Guide)
+
+Building a demo that works once is easy; building an automation that runs reliably day after day without getting blocked or breaking on UI changes requires a few key principles.
+
+### 1. Why `browser-use` + Gemini Is Superior to Traditional Automation
+
+Traditional tools (**Selenium, Playwright scripts, Puppeteer**) rely on **hardcoded XPaths and CSS selectors** (`//div[@class='xyz']/button[2]`). They break the moment a website changes a class name, adds a popup banner, A/B tests a button layout, or displays the page in another language.
+
+**Why `browser-use` + Google Gemini wins in production:**
+- **Understands meaning, not fragile selectors:** The AI reads both the **live DOM elements** and a **visual screenshot (`USE_VISION=true`)** on every step. If a button moves, changes its HTML tag, or appears in Japanese instead of English, the agent still finds and clicks the right button.
+- **Handles unexpected popups and slow loading states:** Instead of crashing with `ElementClickInterceptedException` when a cookie banner or "Got it" dialog appears, the agent sees the dialog, closes it, and continues.
+- **Vision at a fraction of the cost:** Sending screenshots on every step with other frontier models becomes expensive fast. **Google Gemini Flash (`gemini-3.6-flash` / `gemini-2.5-flash`)** has strong visual UI understanding while costing a fraction of a cent per task — making vision-enabled automation practical at scale.
+- **Structured outcomes instead of blind clicks:** Instead of hoping a click worked, the agent visually verifies the confirmation message on screen and returns a strict Pydantic `Output` (`SUCCESS`, `QUOTA_EXCEEDED`, `NEEDS_LOGIN`) with the exact `evidence` text.
+
+---
+
+### 2. Why Installed Chrome (Mode 1) vs. New Browser Instance (Mode 2) Matters So Much
+
+Choosing between **Mode 1 (`installed`)** and **Mode 2 (`fresh`)** is not just convenience — it directly affects **trust, login survival, and bot detection**:
+
+| Factor | Mode 1: Installed Chrome (`installed` — Recommended) | Mode 2: New Instance (`fresh`) |
+|---|---|---|
+| **Browser Fingerprint & Trust** | Runs the **real, official Google Chrome binary** on your OS with normal codecs, GPU rendering, and TLS/HTTP2 signatures. | Uses a fresh/Playwright Chromium instance that starts with an empty history and a "new browser" profile. |
+| **Cookies & Account Trust Score** | Reuses an **aged profile** (`./profiles/installed`) with existing cookies, browsing history, and active sessions. Websites treat it like a returning human user. | Starts completely cold (`ephemeral`) or in a fresh isolated folder (`persistent`) with no prior history. |
+| **Login & 2FA Friction** | **Log in once by hand** (`make chrome`), and the browser stays open all day (`keep_alive=True`). No repeated logins that trigger security alerts. | Logging in from scratch on every run quickly triggers "suspicious login" emails, 2FA prompts, and CAPTCHAs. |
+| **When to Choose** | **Always use Mode 1** for logged-in accounts (Google, admin portals, social/SaaS dashboards) and anti-bot-sensitive websites. | Use Mode 2 for public pages, stateless scraping, or isolated tests where no login is needed. |
+
+---
+
+### 3. CAPTCHAs: Automation Does Not Solve CAPTCHAs by Itself
+
+A critical rule for reliable automation:
+> **Do not ask the LLM browser agent to click through reCAPTCHA, hCaptcha, or Cloudflare Turnstile puzzles.**
+
+- AI vision models are **not** designed to solve interactive image-grid CAPTCHAs or bypass behavioral challenge tokens — trying to brute-force them with LLM steps wastes tokens and lowers your IP/account trust score even further.
+- **What to do instead:**
+  1. **Prevent CAPTCHAs first** by using **Mode 1 (`installed`)** with a warm, already-logged-in Chrome profile and human-like pacing (this avoids 90%+ of CAPTCHAs in the first place).
+  2. **Stop cleanly when a CAPTCHA appears:** In your task prompt, always include an early-exit rule:
+     ```text
+     If you see a CAPTCHA, "unusual traffic", or "verify you are human" screen, stop immediately and finish with BLOCKED_OR_CAPTCHA.
+     ```
+  3. **Use a dedicated CAPTCHA-solving service when solving is required:** If your workflow must pass CAPTCHAs automatically, integrate a specialized solver API or browser extension such as **[CapSolver](https://www.capsolver.com/)** or **[2Captcha](https://2captcha.com/)**:
+     - **Extension approach (easiest with Mode 1):** Install the CapSolver or 2Captcha Chrome extension inside your Mode 1 profile (`make chrome`), enter your solver API key in the extension settings once, and let the extension solve challenges automatically in the background.
+     - **API / Custom Tool approach:** Register a custom `@tools.action` function on your task (see [Step 4 in Section 7](#step-4-optional-adding-custom-python-tools-toolsaction)) that sends the sitekey/page URL to the CapSolver or 2Captcha API and injects the returned token into the page.
+
+---
+
+### 4. The Importance of Human Behavior & How to Adapt It
+
+Websites detect bots not only by browser headers, but by **how fast and how mechanically** actions happen (instant 0ms clicks, opening 20 tabs per minute, clicking a submit button 5 times while a spinner is still loading, or running 24/7 without breaks).
+
+**How this boilerplate adapts human behavior (and how you can tune it):**
+
+1. **Natural pauses between actions (`WAIT_BETWEEN_ACTIONS`):**
+   - Set `WAIT_BETWEEN_ACTIONS=0.5` (or `1.0`–`2.0` on stricter sites) in `.env` so the browser waits between every click, scroll, and keystroke instead of acting at machine speed.
+2. **One action at a time (`max_actions_per_step=1`):**
+   - Configured by default in [`app/agent_factory.py`](app/agent_factory.py). Instead of firing a blind batch of 5 clicks at once, the agent performs **one** action, looks at the updated page like a human would, and then decides the next step.
+3. **Waiting for spinners & never double-clicking (`system_rules`):**
+   - Always instruct the agent in `system_rules`:
+     ```python
+     system_rules = (
+         "Act carefully like a real person: wait for loading spinners and dialogs to finish before acting. "
+         "Click submit buttons at most ONCE and wait patiently for the result."
+     )
+     ```
+4. **Keep a single warm tab open (Mode 1):**
+   - Real users don't launch and kill their entire browser 100 times a day. In Mode 1, Chrome opens once at the start of your work session and reuses the same tab across tasks.
+5. **Add random jitter between tasks when running batches:**
+   - When calling `run_task()` in a loop over many items, add a randomized human pause (`await asyncio.sleep(random.uniform(5, 20))`) between tasks and run within normal working hours rather than hammering a target site non-stop.
+
+---
+
+## 2. The Big Picture: 2 Browser Modes & 2 Ways to Run
 
 Before running anything, there are only two choices you ever make:
 
@@ -41,7 +113,7 @@ Before running anything, there are only two choices you ever make:
 
 ---
 
-## 2. First-Time Setup (`.env`)
+## 3. First-Time Setup (`.env`)
 
 1. Copy the example environment file:
    ```bash
@@ -65,7 +137,7 @@ Before running anything, there are only two choices you ever make:
 
 ---
 
-## 3. How to Run Tasks (Native vs. Docker Side-by-Side)
+## 4. How to Run Tasks (Native vs. Docker Side-by-Side)
 
 Every action has a matching `make` command whether you run **without Docker** or **with Docker**:
 
@@ -81,7 +153,7 @@ Every action has a matching `make` command whether you run **without Docker** or
 
 ---
 
-## 4. Understanding the 2 Browser Modes in Detail
+## 5. Understanding the 2 Browser Modes in Detail
 
 ### Mode 1: Installed Browser (`BROWSER_MODE=installed` — Recommended)
 
@@ -128,7 +200,7 @@ In Mode 2 (`app/browser/fresh.py`), `browser-use` starts a brand-new browser jus
 
 ---
 
-## 5. Understanding the Docker Setup in Detail
+## 6. Understanding the Docker Setup in Detail
 
 Even if you run inside Docker, you don't lose flexibility. Here is what the three Docker files in the root folder do and how the three `make docker-*` commands work:
 
@@ -160,7 +232,7 @@ flowchart TB
 
 ---
 
-## 6. How to Modify the Project for Your Own Process
+## 7. How to Modify the Project for Your Own Process
 
 To automate a new workflow, **you only create ONE new file inside `app/tasks/`**. Every `BaseTask` subclass in `app/tasks/` is discovered automatically.
 
@@ -311,85 +383,13 @@ asyncio.run(main())
 
 ---
 
-## 7. Prompting Best Practices (Production Lessons)
+## 8. Prompting Best Practices (Production Lessons)
 
 1. **Always use `Literal[...]` outcome codes + `evidence`:** Instead of returning a free-text paragraph, make the AI pick one outcome code (`SUCCESS`, `QUOTA_EXCEEDED`, `NEEDS_LOGIN`, etc.) and copy the exact text it saw into `evidence`.
 2. **Tell the AI to click submit buttons "exactly ONCE":** On slow pages that take 30–90 seconds to respond, explicitly write: `Click "Submit" exactly ONCE. Never click it a second time. Wait up to 90 seconds for the spinner to finish.`
 3. **Keep tabs clean in Mode 1:** When reusing an open Chrome window across runs, add to `system_rules`: `"Work only in the current tab. Never open new tabs or sign out."` and end your prompt with: `"Before finishing, close any open modal dialog."`
 4. **Multi-language pages:** If your target site can appear in non-English languages, add to `system_rules`: `"The page may be shown in any language; understand buttons and messages by meaning."`
 5. **Use `start_url` for initial navigation:** By default, `directly_open_url=False` is set in `app/agent_factory.py` so URLs mentioned as data inside your prompt aren't opened automatically. Set `start_url = "https://..."` on your task when you want the browser to open a page before Step 1.
-
----
-
-## 8. What Makes Browser Automation Robust (Production Guide)
-
-Building a demo that works once is easy; building an automation that runs reliably day after day without getting blocked or breaking on UI changes requires a few key principles.
-
-### 1. Why `browser-use` + Gemini Is Superior to Traditional Automation
-
-Traditional tools (**Selenium, Playwright scripts, Puppeteer**) rely on **hardcoded XPaths and CSS selectors** (`//div[@class='xyz']/button[2]`). They break the moment a website changes a class name, adds a popup banner, A/B tests a button layout, or displays the page in another language.
-
-**Why `browser-use` + Google Gemini wins in production:**
-- **Understands meaning, not fragile selectors:** The AI reads both the **live DOM elements** and a **visual screenshot (`USE_VISION=true`)** on every step. If a button moves, changes its HTML tag, or appears in Japanese instead of English, the agent still finds and clicks the right button.
-- **Handles unexpected popups and slow loading states:** Instead of crashing with `ElementClickInterceptedException` when a cookie banner or "Got it" dialog appears, the agent sees the dialog, closes it, and continues.
-- **Vision at a fraction of the cost:** Sending screenshots on every step with other frontier models becomes expensive fast. **Google Gemini Flash (`gemini-3.6-flash` / `gemini-2.5-flash`)** has strong visual UI understanding while costing a fraction of a cent per task — making vision-enabled automation practical at scale.
-- **Structured outcomes instead of blind clicks:** Instead of hoping a click worked, the agent visually verifies the confirmation message on screen and returns a strict Pydantic `Output` (`SUCCESS`, `QUOTA_EXCEEDED`, `NEEDS_LOGIN`) with the exact `evidence` text.
-
----
-
-### 2. Why Installed Chrome (Mode 1) vs. New Browser Instance (Mode 2) Matters So Much
-
-Choosing between **Mode 1 (`installed`)** and **Mode 2 (`fresh`)** is not just convenience — it directly affects **trust, login survival, and bot detection**:
-
-| Factor | Mode 1: Installed Chrome (`installed` — Recommended) | Mode 2: New Instance (`fresh`) |
-|---|---|---|
-| **Browser Fingerprint & Trust** | Runs the **real, official Google Chrome binary** on your OS with normal codecs, GPU rendering, and TLS/HTTP2 signatures. | Uses a fresh/Playwright Chromium instance that starts with an empty history and a "new browser" profile. |
-| **Cookies & Account Trust Score** | Reuses an **aged profile** (`./profiles/installed`) with existing cookies, browsing history, and active sessions. Websites treat it like a returning human user. | Starts completely cold (`ephemeral`) or in a fresh isolated folder (`persistent`) with no prior history. |
-| **Login & 2FA Friction** | **Log in once by hand** (`make chrome`), and the browser stays open all day (`keep_alive=True`). No repeated logins that trigger security alerts. | Logging in from scratch on every run quickly triggers "suspicious login" emails, 2FA prompts, and CAPTCHAs. |
-| **When to Choose** | **Always use Mode 1** for logged-in accounts (Google, admin portals, social/SaaS dashboards) and anti-bot-sensitive websites. | Use Mode 2 for public pages, stateless scraping, or isolated tests where no login is needed. |
-
----
-
-### 3. CAPTCHAs: Automation Does Not Solve CAPTCHAs by Itself
-
-A critical rule for reliable automation:
-> **Do not ask the LLM browser agent to click through reCAPTCHA, hCaptcha, or Cloudflare Turnstile puzzles.**
-
-- AI vision models are **not** designed to solve interactive image-grid CAPTCHAs or bypass behavioral challenge tokens — trying to brute-force them with LLM steps wastes tokens and lowers your IP/account trust score even further.
-- **What to do instead:**
-  1. **Prevent CAPTCHAs first** by using **Mode 1 (`installed`)** with a warm, already-logged-in Chrome profile and human-like pacing (this avoids 90%+ of CAPTCHAs in the first place).
-  2. **Stop cleanly when a CAPTCHA appears:** In your task prompt, always include an early-exit rule:
-     ```text
-     If you see a CAPTCHA, "unusual traffic", or "verify you are human" screen, stop immediately and finish with BLOCKED_OR_CAPTCHA.
-     ```
-  3. **Use a dedicated CAPTCHA-solving service when solving is required:** If your workflow must pass CAPTCHAs automatically, integrate a specialized solver API or browser extension such as **[CapSolver](https://www.capsolver.com/)** or **[2Captcha](https://2captcha.com/)**:
-     - **Extension approach (easiest with Mode 1):** Install the CapSolver or 2Captcha Chrome extension inside your Mode 1 profile (`make chrome`), enter your solver API key in the extension settings once, and let the extension solve challenges automatically in the background.
-     - **API / Custom Tool approach:** Register a custom `@tools.action` function on your task (see [Step 4 in Section 6](#step-4-optional-adding-custom-python-tools-toolsaction)) that sends the sitekey/page URL to the CapSolver or 2Captcha API and injects the returned token into the page.
-
----
-
-### 4. The Importance of Human Behavior & How to Adapt It
-
-Websites detect bots not only by browser headers, but by **how fast and how mechanically** actions happen (instant 0ms clicks, opening 20 tabs per minute, clicking a submit button 5 times while a spinner is still loading, or running 24/7 without breaks).
-
-**How this boilerplate adapts human behavior (and how you can tune it):**
-
-1. **Natural pauses between actions (`WAIT_BETWEEN_ACTIONS`):**
-   - Set `WAIT_BETWEEN_ACTIONS=0.5` (or `1.0`–`2.0` on stricter sites) in `.env` so the browser waits between every click, scroll, and keystroke instead of acting at machine speed.
-2. **One action at a time (`max_actions_per_step=1`):**
-   - Configured by default in [`app/agent_factory.py`](app/agent_factory.py). Instead of firing a blind batch of 5 clicks at once, the agent performs **one** action, looks at the updated page like a human would, and then decides the next step.
-3. **Waiting for spinners & never double-clicking (`system_rules`):**
-   - Always instruct the agent in `system_rules`:
-     ```python
-     system_rules = (
-         "Act carefully like a real person: wait for loading spinners and dialogs to finish before acting. "
-         "Click submit buttons at most ONCE and wait patiently for the result."
-     )
-     ```
-4. **Keep a single warm tab open (Mode 1):**
-   - Real users don't launch and kill their entire browser 100 times a day. In Mode 1, Chrome opens once at the start of your work session and reuses the same tab across tasks.
-5. **Add random jitter between tasks when running batches:**
-   - When calling `run_task()` in a loop over many items, add a randomized human pause (`await asyncio.sleep(random.uniform(5, 20))`) between tasks and run within normal working hours rather than hammering a target site non-stop.
 
 ---
 
