@@ -15,9 +15,8 @@ Everything you need to know — setting up, choosing a browser mode, running wit
 5. [Understanding the Docker Setup in Detail](#5-understanding-the-docker-setup-in-detail)
 6. [How to Modify the Project for Your Own Process](#6-how-to-modify-the-project-for-your-own-process)
 7. [Prompting Best Practices (Production Lessons)](#7-prompting-best-practices-production-lessons)
-8. [Switching AI / LLM Providers & Cost Control](#8-switching-ai--llm-providers--cost-control)
-9. [Project Structure & Architecture](#9-project-structure--architecture)
-10. [Troubleshooting Common Issues](#10-troubleshooting-common-issues)
+8. [Project Structure & Architecture](#8-project-structure--architecture)
+9. [Troubleshooting Common Issues](#9-troubleshooting-common-issues)
 
 ---
 
@@ -321,34 +320,7 @@ asyncio.run(main())
 
 ---
 
-## 8. Switching AI / LLM Providers & Cost Control
-
-Set `LLM_PROVIDER` and the matching API key in `.env`. Leave `LLM_MODEL` blank to use the recommended default model, or set any model name you prefer:
-
-| `LLM_PROVIDER` | Default `LLM_MODEL` | API Key Variable in `.env` | Notes |
-|---|---|---|---|
-| `google` *(Recommended)* | `gemini-3.6-flash` | `GEMINI_API_KEY` | Lowest cost for vision/screenshot automation |
-| `openai` | `gpt-4.1-mini` | `OPENAI_API_KEY` | Also supports `gpt-4.1`, `o4-mini` |
-| `anthropic` | `claude-sonnet-4-5` | `ANTHROPIC_API_KEY` | Strong reasoning, higher token cost |
-| `azure` | `gpt-4.1-mini` | `AZURE_OPENAI_API_KEY` + `LLM_BASE_URL` | Set `LLM_BASE_URL` to your Azure endpoint |
-| `groq` | `meta-llama/llama-4-maverick-17b-128e-instruct` | `GROQ_API_KEY` | Fast inference |
-| `openrouter` | `google/gemini-2.5-flash` | `OPENROUTER_API_KEY` | Single key for 100+ models |
-| `deepseek` | `deepseek-chat` | `DEEPSEEK_API_KEY` | Set `USE_VISION=false` for text-only models |
-| `mistral` | `mistral-medium-latest` | `MISTRAL_API_KEY` | |
-| `ollama` | `qwen2.5vl:7b` | *(none)* | Local models (`http://localhost:11434`) |
-| `openai_compatible` | *(set `LLM_MODEL`)* | `LLM_API_KEY` | Any vLLM / LM Studio endpoint via `LLM_BASE_URL` |
-| `aws` | `anthropic.claude-3-5-sonnet-20240620-v1:0` | Standard AWS env vars | Run `uv sync --extra aws` first |
-
-### Cost Logs, Traces & Daily Budget Cap
-
-Every run writes three artifacts under `./logs/`:
-- **Cost log (`logs/api_cost/api_cost_<YYYY-MM-DD>.log`):** Tracks calls, input/cached/output tokens, and USD cost per run. Check today's total anytime with `make cost`.
-- **Daily budget guard (`MAX_DAILY_LLM_COST` in `.env`):** Set e.g. `MAX_DAILY_LLM_COST=2.00` to automatically block new runs once today's spend reaches $2.00 (`0.00` = unlimited).
-- **Step trace (`logs/traces/trace_<YYYY-MM-DD>.jsonl`) & Screenshots (`logs/screenshots/`):** Every step's URL, goal, actions, and errors are recorded alongside a final PNG screenshot (`..._ok.png` or `..._fail.png`).
-
----
-
-## 9. Project Structure & Architecture
+## 8. Project Structure & Architecture
 
 ```text
 browser-use-boilerplate/
@@ -390,7 +362,7 @@ browser-use-boilerplate/
 
 ---
 
-## 10. Troubleshooting Common Issues
+## 9. Troubleshooting Common Issues
 
 1. **`Profile ... is already open in a Chrome WITHOUT DevTools port` (`SingletonLock`):**
    - **Cause:** That profile folder is already open in a Chrome window that wasn't started with port `9222`, or Chrome crashed earlier and left a lock file.
