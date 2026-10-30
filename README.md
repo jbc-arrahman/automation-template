@@ -15,8 +15,9 @@ Everything you need to know — setting up, choosing a browser mode, running wit
 5. [Understanding the Docker Setup in Detail](#5-understanding-the-docker-setup-in-detail)
 6. [How to Modify the Project for Your Own Process](#6-how-to-modify-the-project-for-your-own-process)
 7. [Prompting Best Practices (Production Lessons)](#7-prompting-best-practices-production-lessons)
-8. [Project Structure & Architecture](#8-project-structure--architecture)
-9. [Troubleshooting Common Issues](#9-troubleshooting-common-issues)
+8. [What Makes Browser Automation Robust (Production Guide)](#8-what-makes-browser-automation-robust-production-guide)
+9. [Project Structure & Architecture](#9-project-structure--architecture)
+10. [Troubleshooting Common Issues](#10-troubleshooting-common-issues)
 
 ---
 
@@ -320,7 +321,79 @@ asyncio.run(main())
 
 ---
 
-## 8. Project Structure & Architecture
+## 8. What Makes Browser Automation Robust (Production Guide)
+
+Building a demo that works once is easy; building an automation that runs reliably day after day without getting blocked or breaking on UI changes requires a few key principles.
+
+### 1. Why `browser-use` + Gemini Is Superior to Traditional Automation
+
+Traditional tools (**Selenium, Playwright scripts, Puppeteer**) rely on **hardcoded XPaths and CSS selectors** (`//div[@class='xyz']/button[2]`). They break the moment a website changes a class name, adds a popup banner, A/B tests a button layout, or displays the page in another language.
+
+**Why `browser-use` + Google Gemini wins in production:**
+- **Understands meaning, not fragile selectors:** The AI reads both the **live DOM elements** and a **visual screenshot (`USE_VISION=true`)** on every step. If a button moves, changes its HTML tag, or appears in Japanese instead of English, the agent still finds and clicks the right button.
+- **Handles unexpected popups and slow loading states:** Instead of crashing with `ElementClickInterceptedException` when a cookie banner or "Got it" dialog appears, the agent sees the dialog, closes it, and continues.
+- **Vision at a fraction of the cost:** Sending screenshots on every step with other frontier models becomes expensive fast. **Google Gemini Flash (`gemini-3.6-flash` / `gemini-2.5-flash`)** has strong visual UI understanding while costing a fraction of a cent per task — making vision-enabled automation practical at scale.
+- **Structured outcomes instead of blind clicks:** Instead of hoping a click worked, the agent visually verifies the confirmation message on screen and returns a strict Pydantic `Output` (`SUCCESS`, `QUOTA_EXCEEDED`, `NEEDS_LOGIN`) with the exact `evidence` text.
+
+---
+
+### 2. Why Installed Chrome (Mode 1) vs. New Browser Instance (Mode 2) Matters So Much
+
+Choosing between **Mode 1 (`installed`)** and **Mode 2 (`fresh`)** is not just convenience — it directly affects **trust, login survival, and bot detection**:
+
+| Factor | Mode 1: Installed Chrome (`installed` — Recommended) | Mode 2: New Instance (`fresh`) |
+|---|---|---|
+| **Browser Fingerprint & Trust** | Runs the **real, official Google Chrome binary** on your OS with normal codecs, GPU rendering, and TLS/HTTP2 signatures. | Uses a fresh/Playwright Chromium instance that starts with an empty history and a "new browser" profile. |
+| **Cookies & Account Trust Score** | Reuses an **aged profile** (`./profiles/installed`) with existing cookies, browsing history, and active sessions. Websites treat it like a returning human user. | Starts completely cold (`ephemeral`) or in a fresh isolated folder (`persistent`) with no prior history. |
+| **Login & 2FA Friction** | **Log in once by hand** (`make chrome`), and the browser stays open all day (`keep_alive=True`). No repeated logins that trigger security alerts. | Logging in from scratch on every run quickly triggers "suspicious login" emails, 2FA prompts, and CAPTCHAs. |
+| **When to Choose** | **Always use Mode 1** for logged-in accounts (Google, admin portals, social/SaaS dashboards) and anti-bot-sensitive websites. | Use Mode 2 for public pages, stateless scraping, or isolated tests where no login is needed. |
+
+---
+
+### 3. CAPTCHAs: Automation Does Not Solve CAPTCHAs by Itself
+
+A critical rule for reliable automation:
+> **Do not ask the LLM browser agent to click through reCAPTCHA, hCaptcha, or Cloudflare Turnstile puzzles.**
+
+- AI vision models are **not** designed to solve interactive image-grid CAPTCHAs or bypass behavioral challenge tokens — trying to brute-force them with LLM steps wastes tokens and lowers your IP/account trust score even further.
+- **What to do instead:**
+  1. **Prevent CAPTCHAs first** by using **Mode 1 (`installed`)** with a warm, already-logged-in Chrome profile and human-like pacing (this avoids 90%+ of CAPTCHAs in the first place).
+  2. **Stop cleanly when a CAPTCHA appears:** In your task prompt, always include an early-exit rule:
+     ```text
+     If you see a CAPTCHA, "unusual traffic", or "verify you are human" screen, stop immediately and finish with BLOCKED_OR_CAPTCHA.
+     ```
+  3. **Use a dedicated CAPTCHA-solving service when solving is required:** If your workflow must pass CAPTCHAs automatically, integrate a specialized solver API or browser extension such as **[CapSolver](https://www.capsolver.com/)** or **[2Captcha](https://2captcha.com/)**:
+     - **Extension approach (easiest with Mode 1):** Install the CapSolver or 2Captcha Chrome extension inside your Mode 1 profile (`make chrome`), enter your solver API key in the extension settings once, and let the extension solve challenges automatically in the background.
+     - **API / Custom Tool approach:** Register a custom `@tools.action` function on your task (see [Step 4 in Section 6](#step-4-optional-adding-custom-python-tools-toolsaction)) that sends the sitekey/page URL to the CapSolver or 2Captcha API and injects the returned token into the page.
+
+---
+
+### 4. The Importance of Human Behavior & How to Adapt It
+
+Websites detect bots not only by browser headers, but by **how fast and how mechanically** actions happen (instant 0ms clicks, opening 20 tabs per minute, clicking a submit button 5 times while a spinner is still loading, or running 24/7 without breaks).
+
+**How this boilerplate adapts human behavior (and how you can tune it):**
+
+1. **Natural pauses between actions (`WAIT_BETWEEN_ACTIONS`):**
+   - Set `WAIT_BETWEEN_ACTIONS=0.5` (or `1.0`–`2.0` on stricter sites) in `.env` so the browser waits between every click, scroll, and keystroke instead of acting at machine speed.
+2. **One action at a time (`max_actions_per_step=1`):**
+   - Configured by default in [`app/agent_factory.py`](app/agent_factory.py). Instead of firing a blind batch of 5 clicks at once, the agent performs **one** action, looks at the updated page like a human would, and then decides the next step.
+3. **Waiting for spinners & never double-clicking (`system_rules`):**
+   - Always instruct the agent in `system_rules`:
+     ```python
+     system_rules = (
+         "Act carefully like a real person: wait for loading spinners and dialogs to finish before acting. "
+         "Click submit buttons at most ONCE and wait patiently for the result."
+     )
+     ```
+4. **Keep a single warm tab open (Mode 1):**
+   - Real users don't launch and kill their entire browser 100 times a day. In Mode 1, Chrome opens once at the start of your work session and reuses the same tab across tasks.
+5. **Add random jitter between tasks when running batches:**
+   - When calling `run_task()` in a loop over many items, add a randomized human pause (`await asyncio.sleep(random.uniform(5, 20))`) between tasks and run within normal working hours rather than hammering a target site non-stop.
+
+---
+
+## 9. Project Structure & Architecture
 
 ```text
 browser-use-boilerplate/
@@ -362,7 +435,7 @@ browser-use-boilerplate/
 
 ---
 
-## 9. Troubleshooting Common Issues
+## 10. Troubleshooting Common Issues
 
 1. **`Profile ... is already open in a Chrome WITHOUT DevTools port` (`SingletonLock`):**
    - **Cause:** That profile folder is already open in a Chrome window that wasn't started with port `9222`, or Chrome crashed earlier and left a lock file.
