@@ -20,7 +20,7 @@ services:
 
   # Mode 1 from Docker: drive the Chrome running on the HOST (started with `make chrome`).
   # Docker Desktop (macOS/Windows) reaches the host via host.docker.internal.
-  # Linux: use docker-compose.linux.yml (host networking) instead - see docs/DOCKER.md.
+  # Linux: use docker-compose.linux.yml (host networking) instead - see README.md.
   bot-installed:
     extends: bot
     environment:

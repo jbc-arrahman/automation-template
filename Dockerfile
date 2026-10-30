@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # browser-use boilerplate - runs Mode 2 (fresh Chromium INSIDE the container) out of the box, and
-# Mode 1 by attaching to a Chrome on the Docker HOST over CDP (see docs/DOCKER.md).
+# Mode 1 by attaching to a Chrome on the Docker HOST over CDP (see README.md).
 #
 # Optional live view: ENABLE_VNC=true starts Xvfb + x11vnc + noVNC, then open
 # http://localhost:6080/vnc.html to watch (or log in by hand) in the headed browser.

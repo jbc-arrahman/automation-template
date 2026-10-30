@@ -14,7 +14,7 @@ Everything else (LLM, browser mode, timeouts, cost log, trace) is handled by app
         def prompt(self) -> str:
             return f"1. Open {self.inputs['url']} ... Finish with the structured result."
 
-See docs/CREATING_TASKS.md for the full walkthrough.
+See README.md for the full walkthrough.
 """
 from __future__ import annotations
 

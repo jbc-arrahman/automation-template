@@ -4,7 +4,7 @@ browser-use ships its own clients for every provider below, so switching provide
 .env change. Gemini is the recommended default: in our production work it was the cheapest
 provider that still handles vision (screenshots) well.
 
-Adding a provider = one entry in PROVIDERS + one branch in build_llm(). See docs/LLM_PROVIDERS.md.
+Adding a provider = one entry in PROVIDERS + one branch in build_llm(). See README.md.
 """
 from __future__ import annotations
 

@@ -12,7 +12,7 @@ Two ways to get a Chrome to drive (INSTALLED_ACTION):
 
 Chrome 136+ ignores --remote-debugging-port on your DEFAULT profile directory (security change).
 Use a dedicated directory (default: ./profiles/installed) and log in there once, or copy your
-real profile into it with `copy_profile()` / `make copy-profile`. See docs/BROWSER_MODES.md.
+real profile into it with `copy_profile()` / `make copy-profile`. See README.md.
 """
 from __future__ import annotations
 
@@ -140,7 +140,7 @@ def launch_chrome(settings: Settings) -> int:
         raise RuntimeError(
             f"CHROME_USER_DATA_DIR points at your everyday Chrome profile ({udd}). Chrome 136+ blocks "
             "remote debugging there. Use a dedicated dir (default ./profiles/installed) or copy your "
-            "profile first: `make copy-profile` (see docs/BROWSER_MODES.md)."
+            "profile first: `make copy-profile` (see README.md)."
         )
     udd.mkdir(parents=True, exist_ok=True)
     if _profile_locked(udd):

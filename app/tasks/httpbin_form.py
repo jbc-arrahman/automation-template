@@ -4,7 +4,7 @@
 
 This is the recommended pattern for production tasks: the agent must finish with exactly one
 `outcome` from a fixed Literal list, plus the `evidence` text it saw. Your code then branches on
-the outcome instead of parsing free text. See docs/PROMPTING_GUIDE.md.
+the outcome instead of parsing free text. See README.md.
 """
 from typing import Literal
 
