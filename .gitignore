@@ -1,0 +1,24 @@
+# Python / uv
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data (browser profiles, logs, traces, screenshots)
+profiles/
+logs/
+*.pid
+
+# OS
+.DS_Store
+Thumbs.db

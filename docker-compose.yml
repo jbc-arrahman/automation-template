@@ -1,0 +1,32 @@
+# docker compose up is not needed - every run is a one-off container:
+#   make docker-run TASK=hn_top_stories                  (Mode 2: fresh Chromium in the container)
+#   make docker-run-installed TASK=hn_top_stories        (Mode 1: attach to Chrome on the host)
+#   make docker-vnc TASK=...                             (Mode 2 headed + live view on :6080)
+services:
+  bot:
+    build: .
+    image: browser-use-boilerplate:latest
+    env_file: .env
+    environment:
+      BROWSER_MODE: fresh
+      HEADLESS: "true"
+    volumes:
+      - ./logs:/app/logs            # cost logs, traces, screenshots
+      - ./profiles:/app/profiles    # persistent fresh profiles survive container restarts
+      - ./app/tasks:/app/app/tasks  # edit tasks without rebuilding the image
+    shm_size: "2gb"                 # Chromium crashes with Docker's default 64 MB /dev/shm
+    ports:
+      - "6080:6080"                 # noVNC (only used when ENABLE_VNC=true)
+
+  # Mode 1 from Docker: drive the Chrome running on the HOST (started with `make chrome`).
+  # Docker Desktop (macOS/Windows) reaches the host via host.docker.internal.
+  # Linux: use docker-compose.linux.yml (host networking) instead - see docs/DOCKER.md.
+  bot-installed:
+    extends: bot
+    environment:
+      BROWSER_MODE: installed
+      INSTALLED_ACTION: attach
+      CDP_URL: http://host.docker.internal:${CDP_PORT:-9222}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports: !reset []

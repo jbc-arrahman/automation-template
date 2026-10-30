@@ -1,0 +1,10 @@
+# Linux override for Mode 1 from Docker: share the host network so the container reaches the
+# host Chrome's DevTools port on 127.0.0.1 (Chrome only listens on loopback).
+#   docker compose -f docker-compose.yml -f docker-compose.linux.yml run --rm bot-installed bub run <task>
+# (`make docker-run-installed` adds this file automatically on Linux.)
+services:
+  bot-installed:
+    network_mode: host
+    extra_hosts: !reset []
+    environment:
+      CDP_URL: http://127.0.0.1:${CDP_PORT:-9222}
